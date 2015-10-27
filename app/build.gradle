@@ -1,0 +1,190 @@
+apply plugin: 'com.android.application'
+
+android {
+    compileSdkVersion 23
+    buildToolsVersion "23.0.1"
+
+    defaultConfig {
+        applicationId "com.codeboy.autoresguarddemo"
+        minSdkVersion 14
+        targetSdkVersion 23
+        versionCode 100
+        versionName "1.0.0"
+    }
+
+    signingConfigs {
+
+        release {
+            //默认local.properties不加入版本控制中
+            Properties properties = new Properties()
+            properties.load(project.rootProject.file('local.properties').newDataInputStream())
+            def keystore = properties.getProperty("KEY_STORE")
+            def storepasswd = properties.getProperty("KEY_STORE_PASSWORD")
+            def alias = properties.getProperty("KEY_ALIAS")
+            def aliaspasswd = properties.getProperty("KEY_ALIAS_PASSWORD")
+
+            storeFile file(keystore)
+            storePassword(storepasswd)
+            keyAlias alias
+            keyPassword aliaspasswd
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+
+        android.applicationVariants.all { variant ->
+            variant.assemble.doLast {
+                String outname = "";
+                variant.productFlavors.each { productFlavor ->
+                    println("productFlavor:" + productFlavor.name);
+                    outname += productFlavor.name;
+                }
+
+                println("buildType:" + variant.buildType.name);
+                if(variant.buildType.name != 'release') { //是正式版本才进行资源混淆
+                    return;
+                }
+
+                variant.outputs.each { output ->
+                    //注释以下一行可以取消自动资源混淆的方法
+                    runResourceGuard(output.outputFile, outname);
+                }
+
+            }
+        }
+    }
+}
+
+dependencies {
+    compile fileTree(dir: 'libs', include: ['*.jar'])
+    compile 'com.android.support:appcompat-v7:23.1.0'
+}
+
+/** 执行资源混淆的方法*/
+void runResourceGuard(File outFile, String outName) {
+    String finalOutDir = outFile.getParentFile().getAbsolutePath();
+
+    String name = getFileNameWithoutExt(outFile.getName());
+    if(outName == null || "".equals(outName)) {
+        outName = name;
+    }
+    String outDirPath = "build/outputs/resguard/" + outName;
+
+    println("输出目录:" + outDirPath);
+
+    File outDir = file(outDirPath);
+    if(outDir.exists()) {
+        delete(outDir.getAbsolutePath());
+    }
+    outDir.mkdirs();
+
+    //读取签名信息
+    String storeFile = android.signingConfigs.release.storeFile.getAbsolutePath();
+    String storePassword = android.signingConfigs.release.storePassword;
+    String keyAlias = android.signingConfigs.release.keyAlias;
+    String keyPassword = android.signingConfigs.release.keyPassword;
+
+    println("签名:" + storeFile + " " + storePassword + " " + keyAlias + " " + keyPassword);
+
+    String commandExt = isWindowsOS() ? ".exe" : "";
+
+    String zipalignPath = android.getSdkDirectory().getAbsolutePath() + "/build-tools/" + android.buildToolsVersion + "/zipalign" + commandExt;
+
+    println("zipalignPath=" + zipalignPath);
+
+    //执行资源混淆方法
+    def exit = javaexec {
+        main = "-jar"
+        args = [
+                "../resources/AndResGuard/resourcesproguard.jar",
+                outFile.getAbsolutePath(),
+                "-out", outDirPath,
+                "-7zip", "../resources/command/7za" + commandExt,
+                "-zipalign", zipalignPath,
+                "-mapping", "../resources/AndResGuard/resource_mapping.txt",
+                "-signature", storeFile, storePassword, keyPassword, keyAlias
+        ].toList()
+    }
+
+    println("运行结果:" + exit);
+    if(exit.exitValue != 0) {
+        return;
+    }
+
+    //将混淆后apk包替换原来的apk包
+    name += "_signed_aligned.apk";
+    File outApkFile = new File(outDir, name);
+
+    outFile.delete();
+    if(!outApkFile.exists()) {
+        println("资源混淆文件失败！删除原文件！");
+    } else {
+        //自定义输出的文件名,如 demo_100_1.0.0.apk
+        String outputname = "demo_" + android.defaultConfig.versionCode + "_" + android.defaultConfig.versionName;
+
+        String tempExt = "";
+
+        int count = 0;
+        while(true) {
+            File temp = new File(finalOutDir, outputname + tempExt + ".apk");
+            if(!temp.exists()) {
+                break;
+            }
+            tempExt = "(" + (++count) + ")";
+        }
+
+        outputname += tempExt + ".apk";
+
+        println("最终文件名为:" + outputname);
+
+        copy {
+            from(outDirPath) {
+                include name
+            }
+            into finalOutDir
+            rename(name, outputname)
+        }
+    }
+}
+
+/**
+ * <p>获取文件名，不带扩展名</p>
+ * 如path=/sdcard/image.jpg --> image
+ *
+ * @param filePath
+ * @return
+ */
+String getFileNameWithoutExt(String filePath) {
+    if (filePath == null || "".equals(filePath)) {
+        return null;
+    }
+    int last = filePath.lastIndexOf("/");
+    int index = filePath.lastIndexOf(".");
+    if (last == -1 && index == -1) {
+        return filePath;
+    } else if (index > last) {
+        return filePath.substring(last + 1, index);
+    } else {
+        return filePath.substring(last);
+    }
+}
+
+/**
+ * @return true---是Windows操作系统
+ */
+boolean isWindowsOS(){
+    boolean isWindowsOS = false;
+    String osName = System.getProperty("os.name");
+    println("os.name=" + osName);
+    if(osName == null || "".equals(osName)) {
+        return false;
+    }
+    if(osName.toLowerCase().indexOf("windows") > -1){
+        isWindowsOS = true;
+    }
+    return isWindowsOS;
+}

@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">AutoResGuardDemo</string>
+    <string name="test_hello">hello</string>
+</resources>

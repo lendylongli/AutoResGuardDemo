@@ -1,0 +1,10 @@
+res path mapping:
+    res/layout -> r/a
+    res/mipmap-hdpi-v4 -> r/b
+    res/mipmap-mdpi-v4 -> r/c
+    res/mipmap-xhdpi-v4 -> r/d
+    res/mipmap-xxhdpi-v4 -> r/e
+    res/mipmap-xxxhdpi-v4 -> r/f
+
+
+res id mapping:
